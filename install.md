@@ -1,4 +1,4 @@
-# k8s-offline-setup
+# mendix private cloud install
 
 ## 1. 온라인 환경에서 필요한 이미지 및 파일 수집
 ### 1.1. 컨테이너 이미지 리스트 생성
