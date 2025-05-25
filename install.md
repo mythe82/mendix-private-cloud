@@ -1,4 +1,4 @@
-# mendix private cloud install
+# mendix for private cloud install
 
 ## 1. K8s cluster 환경 구성
 * 하기 repo를 참고하여 구성 필요
