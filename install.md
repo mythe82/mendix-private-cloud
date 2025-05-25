@@ -5,6 +5,36 @@
 
 [k8s 구성 - https://github.com/mythe82/k8s-offline-setup/blob/main/k8s-online-install.md](https://github.com/mythe82/k8s-offline-setup/blob/main/k8s-online-install.md)
 
+### 1.1. Helm 설치
+```bash
+mythe82@k8s-controller-1:~$ curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+mythe82@k8s-controller-1:~$ chmod 700 get_helm.sh
+mythe82@k8s-controller-1:~$ ./get_helm.sh -v v3.16.1
+Downloading https://get.helm.sh/helm-v3.16.1-linux-amd64.tar.gz
+Verifying checksum... Done.
+Preparing to install helm into /usr/local/bin
+helm installed into /usr/local/bin/helm
+
+mythe82@k8s-controller-1:~$ helm version
+version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ```bash
 mythe82@k8s-controller-1:~$ source ~/kubespray-venv/bin/activate
 (kubespray-venv) mythe82@k8s-controller-1:~$ cd kubespray/contrib/offline/
