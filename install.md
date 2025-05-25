@@ -1,8 +1,8 @@
 # mendix private cloud install
 
-## 1. 온라인 환경에서 필요한 이미지 및 파일 수집
-### 1.1. 컨테이너 이미지 리스트 생성
-Kubespray 루트 디렉터리에서 아래 스크립트를 실행해 필요한 이미지 리스트와 파일 리스트를 생성합니다.
+## 1. K8s cluster 환경 구성
+하기 repo를 참고하여 구성 필요
+!(https://github.com/mythe82/k8s-offline-setup/blob/main/k8s-offline-install.md)
 
 ```bash
 mythe82@k8s-controller-1:~$ source ~/kubespray-venv/bin/activate
