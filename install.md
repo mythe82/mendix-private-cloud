@@ -119,7 +119,7 @@ persistentvolumeclaim/nfs-test-pvc   Bound    nfs-test-pv   1Gi        RWX      
 
 * pod / pvc 테스트
 ```bash
-mythe82@k8s-controller-1:~/test$ cat <<EOF | kubectl apply -f -
+mythe82@k8s-controller-1:~/test$ cat <<EOF | kubectl delete -f -
 apiVersion: v1
 kind: Pod
 metadata:
@@ -137,30 +137,38 @@ spec:
   volumes:
   - name: nfs-storage
     persistentVolumeClaim:
-      claimName: nfs-pvc
+      claimName: nfs-test-pvc
 EOF
 
-root@cp-k8s:~/mx# kubectl get pods
-
+mythe82@k8s-controller-1:~/test$ k get po -o wide
+NAME           READY   STATUS    RESTARTS   AGE     IP               NODE           NOMINATED NODE   READINESS GATES
+nfs-test-pod   1/1     Running   0          3m13s   10.233.110.135   k8s-worker-1   <none>           <none>
 ```
 
+```bash
 # Pod 내부에서 NFS 마운트 확인
-root@cp-k8s:~/mx# kubectl exec -it nfs-test-pod -- /bin/sh
+mythe82@k8s-controller-1:~/test$ kubectl exec -it nfs-test-pod -- /bin/sh
 / # echo "Hello NFS!" > /mnt/k8s-nfs/testfile.txt
 / # cat /mnt/k8s-nfs/testfile.txt
 Hello NFS!
 / # exit
 
 # NFS 서버에서도 파일 확인
-root@cp-k8s:~/mx# ls /mnt/k8s-nfs
+mythe82@k8s-controller-1:~/test$ ls /mnt/k8s-nfs
 testfile.txt
-root@cp-k8s:~/mx# cat /mnt/k8s-nfs/testfile.txt
+
+mythe82@k8s-controller-1:~/test$ cat /mnt/k8s-nfs/testfile.txt
 Hello NFS!
 
 # 테스트가 완료되면 리소스를 정리
-root@cp-k8s:~/mx# kubectl delete pod nfs-test-pod
-root@cp-k8s:~/mx# kubectl delete pvc nfs-test-pvc
-root@cp-k8s:~/mx# kubectl delete pv nfs-test-pv
+mythe82@k8s-controller-1:~/test$ kubectl delete pod nfs-test-pod
+pod "nfs-test-pod" deleted
+
+mythe82@k8s-controller-1:~/test$ kubectl delete pvc nfs-test-pvc
+persistentvolumeclaim "nfs-test-pvc" deleted
+
+mythe82@k8s-controller-1:~/test$ kubectl delete pv nfs-test-pv
+persistentvolume "nfs-test-pv" deleted
 ```
 
 
