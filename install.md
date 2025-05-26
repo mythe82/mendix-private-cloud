@@ -20,7 +20,6 @@ version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132
 ```
 
 ### 1.2. NFS 구성
-
 ```bash
 # master node에 설치
 mythe82@k8s-controller-1:~$ apt update
@@ -48,96 +47,129 @@ Export list for 10.178.0.11:
 /mnt/k8s-nfs 10.178.0.0/24
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-# 
+* NFS storage class 생성
 ```bash
-mythe82@k8s-controller-1:~$ source ~/kubespray-venv/bin/activate
-(kubespray-venv) mythe82@k8s-controller-1:~$ cd kubespray/contrib/offline/
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline$ ./generate_list.sh -i inventory/mycluster/inventory.ini
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline$ cd temp/
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline/temp$ ls
-files.list  files.list.template  images.list  images.list.template
+mythe82@k8s-controller-1:~$ mkdir test && cd test
+mythe82@k8s-controller-1:~/test$ cat <<EOF > nfs-storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate
+EOF
 ```
-
-### 1.2. 이미지 수집
-이미지 리스트 파일을 기반으로 오프라인 이미지를 다운로드합니다.
 
 ```bash
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline/temp$ IMAGES_FROM_FILE=temp/images.list
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline/temp$ cd ..
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline$ ./manage-offline-container-images.sh create
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline$ ls -ltr
-total 546652
--rwxrwxr-x 1 mythe82 mythe82      1406 May 22 06:41 manage-offline-files.sh
--rwxrwxr-x 1 mythe82 mythe82      7625 May 22 06:41 manage-offline-container-images.sh
--rw-rw-r-- 1 mythe82 mythe82       575 May 22 06:41 generate_list.yml
--rwxrwxr-x 1 mythe82 mythe82      1329 May 22 06:41 generate_list.sh
--rw-rw-r-- 1 mythe82 mythe82        44 May 22 06:41 docker-daemon.json
--rw-rw-r-- 1 mythe82 mythe82      2912 May 22 06:41 README.md
--rwxrwxr-x 1 mythe82 mythe82      2469 May 22 06:41 upload2artifactory.py
--rw-rw-r-- 1 mythe82 mythe82       189 May 22 06:41 registries.conf
--rw-rw-r-- 1 mythe82 mythe82      1186 May 22 06:41 nginx.conf
-drwxrwxr-x 2 mythe82 mythe82      4096 May 22 08:17 temp
--rw-rw-r-- 1 mythe82 mythe82 559721189 May 22 08:27 container-images.tar.gz
+mythe82@k8s-controller-1:~/test$ kubectl get storageclasses.storage.k8s.io 
+No resources found
+
+mythe82@k8s-controller-1:~/test$ kubectl apply -f nfs-storageclass.yaml
+storageclass.storage.k8s.io/nfs-storage created
+
+mythe82@k8s-controller-1:~/test$ k get storageclasses.storage.k8s.io 
+NAME          PROVISIONER                    RECLAIMPOLICY   VOLUMEBINDINGMODE   ALLOWVOLUMEEXPANSION   AGE
+nfs-storage   kubernetes.io/no-provisioner   Delete          Immediate           false                  4s
 ```
 
-## 2. 오프라인용 파일 수집
-파일 리스트에 따라 오프라인 설치에 필요한 파일을 다운로드하고, nginx 컨테이너로 파일 서버를 만듭니다.
+* PersistentVolume 및 PersistentVolumeClaim 생성 test
+```bash
+mythe82@k8s-controller-1:~/test$ k get pv,pvc
+No resources found
+
+mythe82@k8s-controller-1:~/test$ cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-test-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-storage
+  nfs:
+    path: /mnt/k8s-nfs
+    server: 10.178.0.11
+EOF
+```
 
 ```bash
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline$ ./manage-offline-files.sh
-(kubespray-venv) mythe82@k8s-controller-1:~/kubespray/contrib/offline$ ls -ltr
-total 1448628
--rwxrwxr-x 1 mythe82 mythe82      1406 May 22 06:41 manage-offline-files.sh
--rwxrwxr-x 1 mythe82 mythe82      7625 May 22 06:41 manage-offline-container-images.sh
--rw-rw-r-- 1 mythe82 mythe82       575 May 22 06:41 generate_list.yml
--rwxrwxr-x 1 mythe82 mythe82      1329 May 22 06:41 generate_list.sh
--rw-rw-r-- 1 mythe82 mythe82        44 May 22 06:41 docker-daemon.json
--rw-rw-r-- 1 mythe82 mythe82      2912 May 22 06:41 README.md
--rwxrwxr-x 1 mythe82 mythe82      2469 May 22 06:41 upload2artifactory.py
--rw-rw-r-- 1 mythe82 mythe82       189 May 22 06:41 registries.conf
--rw-rw-r-- 1 mythe82 mythe82      1186 May 22 06:41 nginx.conf
-drwxrwxr-x 2 mythe82 mythe82      4096 May 22 08:17 temp
--rw-rw-r-- 1 mythe82 mythe82 559721189 May 22 08:27 container-images.tar.gz
-drwxrwxr-x 6 mythe82 mythe82      4096 May 22 08:37 offline-files
--rw-rw-r-- 1 mythe82 mythe82 923613797 May 22 08:38 offline-files.tar.gz
+mythe82@k8s-controller-1:~/test$ cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-test-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: nfs-storage
+EOF
+
+mythe82@k8s-controller-1:~/test$ kubectl get pv,pvc
+NAME                           CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                  STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+persistentvolume/nfs-test-pv   1Gi        RWX            Retain           Bound    default/nfs-test-pvc   nfs-storage    <unset>                          2m13s
+
+NAME                                 STATUS   VOLUME        CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/nfs-test-pvc   Bound    nfs-test-pv   1Gi        RWX            nfs-storage    <unset>                 55s
 ```
 
-## 3. infra 구성
-### 3.1. VM 준비
-GCP GCE 2대 생성하여 VM 구성
-* k8s-controller-1
-  - 머신 유형 e2-medium (vCPU 2개, 메모리 4GB)
-  - 200GB 표준 영구 디스크
-  - 이미지 ubuntu-2204-jammy-v20250508
+* pod / pvc 테스트
+```bash
+mythe82@k8s-controller-1:~/test$ cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-test-pod
+spec:
+  containers:
+  - name: test-container
+    image: busybox
+    command:
+      - sleep
+      - "3600"
+    volumeMounts:
+    - name: nfs-storage
+      mountPath: "/mnt/k8s-nfs"
+  volumes:
+  - name: nfs-storage
+    persistentVolumeClaim:
+      claimName: nfs-pvc
+EOF
 
-* k8s-worker-1
-  - 머신 유형 e2-medium (vCPU 2개, 메모리 4GB)
-  - 100GB 표준 영구 디스크
-  - 이미지 ubuntu-2204-jammy-v20250508
+root@cp-k8s:~/mx# kubectl get pods
 
- * GCP VPC 생성
-   
-Cloud Shell 터미널에서 명령어 실행
-```Cloud Shell
-mythe82@cloudshell:~ (malee-457606)$ gcloud compute networks create kubernetes-the-kubespray-way --subnet-mode custom
-Created [https://www.googleapis.com/compute/v1/projects/malee-457606/global/networks/kubernetes-the-kubespray-way].
-NAME: kubernetes-the-kubespray-way
-SUBNET_MODE: CUSTOM
-BGP_ROUTING_MODE: REGIONAL
-IPV4_RANGE: 
-GATEWAY_IPV4: 
-INTERNAL_IPV6_RANGE: 
 ```
+
+# Pod 내부에서 NFS 마운트 확인
+root@cp-k8s:~/mx# kubectl exec -it nfs-test-pod -- /bin/sh
+/ # echo "Hello NFS!" > /mnt/k8s-nfs/testfile.txt
+/ # cat /mnt/k8s-nfs/testfile.txt
+Hello NFS!
+/ # exit
+
+# NFS 서버에서도 파일 확인
+root@cp-k8s:~/mx# ls /mnt/k8s-nfs
+testfile.txt
+root@cp-k8s:~/mx# cat /mnt/k8s-nfs/testfile.txt
+Hello NFS!
+
+# 테스트가 완료되면 리소스를 정리
+root@cp-k8s:~/mx# kubectl delete pod nfs-test-pod
+root@cp-k8s:~/mx# kubectl delete pvc nfs-test-pvc
+root@cp-k8s:~/mx# kubectl delete pv nfs-test-pv
+```
+
+
+
+
+
+
+
+
+
+
+
