@@ -33,15 +33,19 @@ mythe82@k8s-controller-1:/mnt$ chmod -R 777 k8s-nfs/
 mythe82@k8s-controller-1:/mnt$ chown -R 1001.1001 k8s-nfs/
 
 # 공유할 디렉터리 경로와 현재 사용하고 있는 서버 인스턴스의 서브넷 범위를 지정
-root@cp-k8s:/mnt# sudo echo '/mnt/k8s-nfs 10.178.0.0/24(rw,sync,no_root_squash,no_subtree_check)' >> /etc/exports
+mythe82@k8s-controller-1:/mnt$ echo '/mnt/k8s-nfs 10.178.0.0/24(rw,sync,no_root_squash,no_subtree_check)' | sudo tee -a /etc/exports
+/mnt/k8s-nfs 10.178.0.0/24(rw,sync,no_root_squash,no_subtree_check)
 
 # 설정을 적용하고 서비스를 재시작
-root@cp-k8s:/mnt# exportfs -a
-root@cp-k8s:/mnt# systemctl restart nfs-kernel-server
+mythe82@k8s-controller-1:/mnt$ sudo exportfs -a
+mythe82@k8s-controller-1:/mnt$ sudo systemctl restart nfs-kernel-server
 
 # worker node에 설치
-root@w1-k8s:~# apt update
-root@w1-k8s:~# sudo apt-get install -y nfs-common
+mythe82@k8s-worker-1:~$ apt update
+mythe82@k8s-worker-1:~$ sudo apt-get install -y nfs-common
+mythe82@k8s-worker-1:~$ showmount -e 10.178.0.11
+Export list for 10.178.0.11:
+/mnt/k8s-nfs 10.178.0.0/24
 ```
 
 
@@ -57,7 +61,7 @@ root@w1-k8s:~# sudo apt-get install -y nfs-common
 
 
 
-
+# 
 ```bash
 mythe82@k8s-controller-1:~$ source ~/kubespray-venv/bin/activate
 (kubespray-venv) mythe82@k8s-controller-1:~$ cd kubespray/contrib/offline/
