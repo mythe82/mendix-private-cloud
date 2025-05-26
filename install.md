@@ -19,7 +19,30 @@ mythe82@k8s-controller-1:~$ helm version
 version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
 ```
 
+### 1.2. NFS 구성
 
+```bash
+# master node에 설치
+mythe82@k8s-controller-1:~$ apt update
+mythe82@k8s-controller-1:~$ sudo apt-get install -y nfs-common nfs-kernel-server rpcbind portmap
+
+# NFS 서버에서 공유할 디렉터리를 생성
+mythe82@k8s-controller-1:~$ cd /mnt
+mythe82@k8s-controller-1:/mnt$ mkdir -p /mnt/k8s-nfs
+mythe82@k8s-controller-1:/mnt$ chmod -R 777 k8s-nfs/
+mythe82@k8s-controller-1:/mnt$ chown -R 1001.1001 k8s-nfs/
+
+# 공유할 디렉터리 경로와 현재 사용하고 있는 서버 인스턴스의 서브넷 범위를 지정
+root@cp-k8s:/mnt# sudo echo '/mnt/k8s-nfs 10.178.0.0/24(rw,sync,no_root_squash,no_subtree_check)' >> /etc/exports
+
+# 설정을 적용하고 서비스를 재시작
+root@cp-k8s:/mnt# exportfs -a
+root@cp-k8s:/mnt# systemctl restart nfs-kernel-server
+
+# worker node에 설치
+root@w1-k8s:~# apt update
+root@w1-k8s:~# sudo apt-get install -y nfs-common
+```
 
 
 
