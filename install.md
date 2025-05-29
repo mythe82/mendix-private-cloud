@@ -171,13 +171,266 @@ mythe82@k8s-controller-1:~/test$ kubectl delete pv nfs-test-pv
 persistentvolume "nfs-test-pv" deleted
 ```
 
+### 1.3. Nginx ingress controller 설치 (online)
+```bash
+# NGINX Ingress Controller를 배포할 namespace 생성
+mythe82@k8s-controller-1:/mnt$ kubectl create namespace ingress-nginx
 
+# Helm Chart 저장소 추가
+mythe82@k8s-controller-1:/mnt$ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+mythe82@k8s-controller-1:/mnt$ helm repo list
+mythe82@k8s-controller-1:/mnt$ helm repo update
 
+# NGINX Ingress Controller 설치
+mythe82@k8s-controller-1:/mnt$ helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --set controller.service.type=NodePort \
+  --set controller.service.nodePorts.http=30080 \
+  --set controller.service.nodePorts.https=30443
+```
+* 추가적으로 Helm Chart의 설정값을 커스터마이징하려면 아래 명령을 사용하여 설정값 파일을 생성하고 수정할 수 있습니다:
+```bash
+mythe82@k8s-controller-1:~$ helm show values ingress-nginx/ingress-nginx > helm-values.yaml
+```
 
+```bash
+# 설치 확인
+mythe82@k8s-controller-1:~$ kubectl get all -n ingress-nginx
+NAME                                            READY   STATUS    RESTARTS   AGE
+pod/ingress-nginx-controller-6885cfc548-75h9g   1/1     Running   0          4m55s
 
+NAME                                         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                      AGE
+service/ingress-nginx-controller             NodePort    10.233.41.210   <none>        80:30080/TCP,443:30443/TCP   4m55s
+service/ingress-nginx-controller-admission   ClusterIP   10.233.12.54    <none>        443/TCP                      4m55s
 
+NAME                                       READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/ingress-nginx-controller   1/1     1            1           4m55s
 
+NAME                                                  DESIRED   CURRENT   READY   AGE
+replicaset.apps/ingress-nginx-controller-6885cfc548   1         1         1       4m55s
+```
 
+* 간단한 nginx APP 생성
+```bash
+mythe82@k8s-controller-1:~$ cd test
+mythe82@k8s-controller-1:~/test$ cat <<EOF > nginx-deploy.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-nginx
+  labels:
+    app: my-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-nginx
+  template:
+    metadata:
+      labels:
+        app: my-nginx
+    spec:
+      containers:
+      - name: my-nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-nginx
+spec:
+  selector:
+    app: my-nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+EOF
+```
+
+* Ingress 리소스 생성 test
+```bash
+mythe82@k8s-controller-1:~/test$ cat <<EOF > nginx-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-nginx-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: example.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: my-nginx
+                port:
+                  number: 80
+EOF
+```
+
+* 리소스 적용
+```bash
+mythe82@k8s-controller-1:~/test$ kubectl apply -f nginx-deploy.yaml
+mythe82@k8s-controller-1:~/test$ kubectl apply -f nginx-ingress.yaml
+mythe82@k8s-controller-1:~/test$ sudo vi /etc/hosts
+10.233.110.140  example.local
+
+mythe82@k8s-controller-1:~/test$ curl http://example.local:30080
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+html { color-scheme: light dark; }
+body { width: 35em; margin: 0 auto;
+font-family: Tahoma, Verdana, Arial, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+```
+
+* 참고 - NGINX Ingress Controller 제거
+```bash
+helm uninstall ingress-nginx --namespace ingress-nginx
+kubectl delete namespace ingress-nginx
+```
+
+## ~~1.7. Harbor 설치 (online)~~
+
+```bash
+root@cp-k8s:~/mx# cd harbor/
+root@cp-k8s:~/mx/harbor# helm repo add harbor https://helm.goharbor.io
+
+# 압축파일 다운로드 및 해제
+root@cp-k8s:~/mx/harbor# helm fetch harbor/harbor --untar
+
+# namespace 생성
+root@cp-k8s:~/mx/harbor# kubectl create ns harbor
+```
+
+```yaml
+root@cp-k8s:~/mx/harbor# cd harbor/
+root@cp-k8s:~/mx/harbor/harbor# vi values.yaml
+
+expose:
+  # Set how to expose the service. Set the type as "ingress", "clusterIP", "nodePort" or "loadBalancer"
+  # and fill the information in the corresponding section
+  type: ingress
+  tls:
+    # Enable TLS or not.
+    # Delete the "ssl-redirect" annotations in "expose.ingress.annotations" when TLS is disabled and "expose.type" is "ingress"
+    # Note: if the "expose.type" is "ingress" and TLS is disabled,
+    # the port must be included in the command when pulling/pushing images.
+    # Refer to https://github.com/goharbor/harbor/issues/5291 for details.
+    enabled: true
+    # The source of the tls certificate. Set as "auto", "secret"
+    # or "none" and fill the information in the corresponding section
+    # 1) auto: generate the tls certificate automatically
+    # 2) secret: read the tls certificate from the specified secret.
+    # The tls certificate can be generated manually or by cert manager
+    # 3) none: configure no tls certificate for the ingress. If the default
+    # tls certificate is configured in the ingress controller, choose this option
+    certSource: auto
+    auto:
+      # The common name used to generate the certificate, it's necessary
+      # when the type isn't "ingress"
+      commonName: ""
+    secret:
+      # The name of secret which contains keys named:
+      # "tls.crt" - the certificate
+      # "tls.key" - the private key
+      secretName: ""
+  ingress:
+    hosts:
+      core: harbor.mxtest.com
+    # set to the type of ingress controller if it has specific requirements.
+    # leave as `default` for most ingress controllers.
+    # set to `gce` if using the GCE ingress controller
+    # set to `ncp` if using the NCP (NSX-T Container Plugin) ingress controller
+    # set to `alb` if using the ALB ingress controller
+    # set to `f5-bigip` if using the F5 BIG-IP ingress controller
+    controller: default
+    ## Allow .Capabilities.KubeVersion.Version to be overridden while creating ingress
+    kubeVersionOverride: ""
+    className: ""
+    
+externalURL: https://harbor.mxtest.com
+
+persistence:
+  enabled: true
+  # Setting it to "keep" to avoid removing PVCs during a helm delete
+  # operation. Leaving it empty will delete PVCs after the chart deleted
+  # (this does not apply for PVCs that are created for internal database
+  # and redis components, i.e. they are never deleted automatically)
+  resourcePolicy: "keep"
+  persistentVolumeClaim:
+    registry:
+      # Use the existing PVC which must be created manually before bound,
+      # and specify the "subPath" if the PVC is shared with other components
+      existingClaim: ""
+      # Specify the "storageClass" used to provision the volume. Or the default
+      # StorageClass will be used (the default).
+      # Set it to "-" to disable dynamic provisioning
+      storageClass: "nfs-storage"
+      subPath: ""
+      accessMode: ReadWriteMany
+      size: 5Gi
+      annotations: {}
+    jobservice:
+      jobLog:
+        existingClaim: ""
+        storageClass: "nfs-storage"
+        subPath: ""
+        accessMode: ReadWriteMany
+        size: 1Gi
+        annotations: {}
+    # If external database is used, the following settings for database will
+    # be ignored
+    database:
+      existingClaim: ""
+      storageClass: "nfs-storage"
+      subPath: ""
+      accessMode: ReadWriteMany
+      size: 1Gi
+      annotations: {}
+    # If external Redis is used, the following settings for Redis will
+    # be ignored
+    redis:
+      existingClaim: ""
+      storageClass: "nfs-storage"
+      subPath: ""
+      accessMode: ReadWriteMany
+      size: 1Gi
+      annotations: {}
+   trivy:
+      existingClaim: ""
+      storageClass: "nfs-storage"
+      subPath: ""
+      accessMode: ReadWriteMany
+      size: 2Gi
+      annotations: {}
+```
 
 
 
