@@ -171,7 +171,68 @@ mythe82@k8s-controller-1:~/test$ kubectl delete pv nfs-test-pv
 persistentvolume "nfs-test-pv" deleted
 ```
 
-### 1.3. Nginx ingress controller 설치 (online)
+### 1.3 SSL 인증서 구성
+* cert-manager 설치
+```bash
+mythe82@k8s-controller-1:~$ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.crds.yaml
+mythe82@k8s-controller-1:~$ helm repo add jetstack https://charts.jetstack.io
+mythe82@k8s-controller-1:~$ helm repo update
+mythe82@k8s-controller-1:~$ helm repo list
+mythe82@k8s-controller-1:~$ helm install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace
+```
+* cluster 내부용 CA 발급 및 Secret 생성
+```bash
+# rootCA 키와 인증서 생성
+mythe82@k8s-controller-1:~$ openssl genrsa -out rootCA.key 2048
+mythe82@k8s-controller-1:~$ openssl req -x509 -new -nodes -key rootCA.key -subj "/CN=k8sInternalCA" -days 3650 -out rootCA.crt
+
+# Kubernetes에 Secret으로 등록
+mythe82@k8s-controller-1:~$ kubectl create secret tls k8s-ca-secret \
+  --cert=rootCA.crt \
+  --key=rootCA.key \
+  -n cert-manager
+```
+* ClusterIssuer 생성
+```bash
+mythe82@k8s-controller-1:~$ cat <<EOF > clusterissuer-ca.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: k8s-internal-ca
+spec:
+  ca:
+    secretName: k8s-ca-secret
+EOF
+
+mythe82@k8s-controller-1:~$ kubectl apply -f clusterissuer-ca.yaml
+```
+* Wildcard 인증서 생성
+```bash
+mythe82@k8s-controller-1:~$ cat <<EOF > wildcard-cert.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-cert
+  namespace: default
+spec:
+  secretName: wildcard-tls
+  issuerRef:
+    name: k8s-internal-ca
+    kind: ClusterIssuer
+  commonName: '*.malee.mds'
+  dnsNames:
+    - '*.malee.mds'
+  duration: 87600h
+  renewBefore: 720h
+EOF
+
+mythe82@k8s-controller-1:~$ kubectl apply -f wildcard-cert.yaml
+mythe82@k8s-controller-1:~$ kubectl describe certificate wildcard-cert -n default
+```
+
+### 1.4. Nginx ingress controller 설치 (online)
 ```bash
 # NGINX Ingress Controller를 배포할 namespace 생성
 mythe82@k8s-controller-1:/mnt$ kubectl create namespace ingress-nginx
@@ -262,8 +323,12 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - malee.mds
+      secretName: wildcard-tls
   rules:
-    - host: example.local
+    - host: malee.mds
       http:
         paths:
           - path: /
@@ -281,9 +346,9 @@ EOF
 mythe82@k8s-controller-1:~/test$ kubectl apply -f nginx-deploy.yaml
 mythe82@k8s-controller-1:~/test$ kubectl apply -f nginx-ingress.yaml
 mythe82@k8s-controller-1:~/test$ sudo vi /etc/hosts
-10.233.110.140  example.local
+35.216.9.4      malee.mds
 
-mythe82@k8s-controller-1:~/test$ curl http://example.local:30080
+mythe82@k8s-controller-1:~/test$ curl -k https://malee.mds:30443
 
 <!DOCTYPE html>
 <html>
