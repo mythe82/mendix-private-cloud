@@ -171,7 +171,7 @@ mythe82@k8s-controller-1:~/test$ kubectl delete pv nfs-test-pv
 persistentvolume "nfs-test-pv" deleted
 ```
 
-### 1.3 SSL 인증서 구성
+### 1.3. SSL 인증서 구성
 * cert-manager 설치
 ```bash
 mythe82@k8s-controller-1:~$ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.crds.yaml
