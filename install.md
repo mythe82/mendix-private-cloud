@@ -232,7 +232,7 @@ mythe82@k8s-controller-1:~$ kubectl apply -f wildcard-cert.yaml
 mythe82@k8s-controller-1:~$ kubectl describe certificate wildcard-cert -n default
 ```
 
-### 1.4. Nginx ingress controller 설치 (online)
+### 1.4. Nginx ingress controller 설치
 ```bash
 # NGINX Ingress Controller를 배포할 namespace 생성
 mythe82@k8s-controller-1:/mnt$ kubectl create namespace ingress-nginx
@@ -249,7 +249,7 @@ mythe82@k8s-controller-1:/mnt$ helm install ingress-nginx ingress-nginx/ingress-
   --set controller.service.nodePorts.http=30080 \
   --set controller.service.nodePorts.https=30443
 ```
-* 추가적으로 Helm Chart의 설정값을 커스터마이징하려면 아래 명령을 사용하여 설정값 파일을 생성하고 수정할 수 있습니다:
+* 추가적으로 Helm Chart의 설정값을 커스터마이징하려면 아래 명령을 사용하여 설정값 파일을 생성하고 수정
 ```bash
 mythe82@k8s-controller-1:~$ helm show values ingress-nginx/ingress-nginx > helm-values.yaml
 ```
@@ -381,7 +381,61 @@ helm uninstall ingress-nginx --namespace ingress-nginx
 kubectl delete namespace ingress-nginx
 ```
 
+### 1.5. Harbor 구성
+```bash
+# Harbor Helm Chart 저장소 추가 및 업데이트
+mythe82@k8s-controller-1:~$ helm repo add harbor https://helm.goharbor.io
+mythe82@k8s-controller-1:~$ helm repo list
 
+# Harbor 네임스페이스 생성
+mythe82@k8s-controller-1:~$ kubectl create namespace harbor
 
+# 기존 인증서 Secret 확인 및 복사
+mythe82@k8s-controller-1:~$ kubectl get secret wildcard-tls -n default
+mythe82@k8s-controller-1:~$ kubectl get secret wildcard-tls -n default -o yaml | \
+sed 's/namespace: default/namespace: harbor/' | \
+kubectl apply -f -
+
+# Harbor Helm values 파일 작성
+mythe82@k8s-controller-1:~$ mkdir harbor
+mythe82@k8s-controller-1:~$ cd harbor/
+mythe82@k8s-controller-1:~/harbor$ vi harbor-values.yaml
+expose:
+  type: ingress
+  tls:
+    enabled: true
+    secretName: wildcard-tls
+  ingress:
+    hosts:
+      core: harbor.malee.mds
+      notary: notary.harbor.malee.mds
+    className: nginx
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+externalURL: https://harbor.malee.mds
+
+harborAdminPassword: "qwe1212!Q"
+
+# Harbor Chart 설치
+mythe82@k8s-controller-1:~/harbor$ helm install harbor harbor/harbor \
+  --namespace harbor \
+  -f harbor-values.yaml
+
+mythe82@k8s-controller-1:~/harbor$ kubectl get ingress -n harbor
+NAME             CLASS   HOSTS              ADDRESS   PORTS     AGE
+harbor-ingress   nginx   harbor.malee.mds             80, 443   25s
+
+mythe82@k8s-controller-1:~/harbor$ kubectl get svc -n harbor
+NAME                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)             AGE
+harbor-core         ClusterIP   10.233.3.175    <none>        80/TCP              31s
+harbor-database     ClusterIP   10.233.42.209   <none>        5432/TCP            31s
+harbor-jobservice   ClusterIP   10.233.38.57    <none>        80/TCP              31s
+harbor-portal       ClusterIP   10.233.11.232   <none>        80/TCP              31s
+harbor-redis        ClusterIP   10.233.42.99    <none>        6379/TCP            31s
+harbor-registry     ClusterIP   10.233.17.128   <none>        5000/TCP,8080/TCP   31s
+harbor-trivy        ClusterIP   10.233.22.77    <none>        8080/TCP            31s
+```
 
 
