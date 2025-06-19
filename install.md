@@ -218,13 +218,13 @@ mythe82@k8s-controller-1:~$ cd harbor/
 mythe82@k8s-controller-1:~/harbor$ scp harbor.v2.13.1.tar.gz wk01:~/
 
 # --- 각 노드에서 아래 명령어 실행 ---
-# 1. harbor 이미지 아카이브가 있는 곳으로 이동
-# 2. containerd의 k8s 네임스페이스로 이미지 로드 (필수)
+# harbor 이미지 아카이브가 있는 곳으로 이동
+# containerd의 k8s 네임스페이스로 이미지 로드 (필수)
 mythe82@k8s-controller-1:~/harbor$ sudo nerdctl --namespace k8s.io load -i harbor.v2.13.1.tar.gz
 mythe82@k8s-controller-1:~/harbor$ ssh wk01
 mythe82@k8s-worker-1:~$ sudo nerdctl --namespace k8s.io load -i harbor.v2.13.1.tar.gz
 
-# 3. 로드 확인
+# 로드 확인
 mythe82@k8s-controller-1:~/harbor$ sudo nerdctl --namespace k8s.io images | grep "goharbor"
 mythe82@k8s-worker-1:~$ sudo nerdctl --namespace k8s.io images | grep "goharbor"
 
@@ -267,7 +267,7 @@ image:
 # 4. Harbor 관리자(admin) 비밀번호 설정 (강력 권장)
 harborAdminPassword: "YourStrongPassword"
 
-# 5. 데이터 영속성 설정 (환경 검토)
+# 5. 스토리지 설정
 # 사용하는 스토리지 클래스가 있다면 지정하는 것이 좋습니다.
 persistence:
   enabled: true
@@ -277,15 +277,103 @@ persistence:
   # ...
 
 mythe82@k8s-controller-1:~/harbor$ kubectl create namespace harbor
-namespace/harbor created
-mythe82@k8s-controller-1:~/harbor$ helm install harbor . \
-  -f my-harbor-values.yaml \
-  --namespace harbor
+
+# 수정된 values.yaml로 Harbor의 모든 k8s 설정 파일을 다시 생성합니다.
+mythe82@k8s-controller-1:~/harbor$ helm template harbor . -f my-harbor-values.yaml --namespace harbor > harbor-manifests.yaml
+
+# 재생성된 설정 파일을 클러스터에 적용하여 기존 설정을 덮어씁니다.
+mythe82@k8s-controller-1:~/harbor$ kubectl apply -f harbor-manifests.yaml
+mythe82@k8s-controller-1:~/harbor$ kubectl get pvc -n harbor
+
+# NFS 서버에서 실행
+mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/database
+mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/redis
+mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/registry
+mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/trivy
+mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/jobservice
+
+# Kubernetes 노드들이 접근할 수 있도록 권한 설정
+mythe82@k8s-controller-1:~/harbor$ sudo chmod -R 777 /mnt/k8s-nfs/harbor
+
+# harbor-nfs-pv.yaml
+mythe82@k8s-controller-1:~/harbor$ vi harbor-nfs-pv.yaml
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-database-pv
+spec:
+  capacity: { storage: 10Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: 10.178.0.11
+    path: "/mnt/k8s-nfs/harbor/database"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-redis-pv
+spec:
+  capacity: { storage: 2Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: 10.178.0.11
+    path: "/mnt/k8s-nfs/harbor/redis"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-registry-pv
+spec:
+  capacity: { storage: 20Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: 10.178.0.11
+    path: "/mnt/k8s-nfs/harbor/registry"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-trivy-pv
+spec:
+  capacity: { storage: 10Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: 10.178.0.11
+    path: "/mnt/k8s-nfs/harbor/trivy"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-jobservice-pv
+spec:
+  capacity: { storage: 2Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: 10.178.0.11
+    path: "/mnt/k8s-nfs/harbor/jobservice"
+
+mythe82@k8s-controller-1:~/harbor$ kubectl apply -f harbor-nfs-pv.yaml
+mythe82@k8s-controller-1:~/harbor$ kubectl get pvc -n harbor
+
+NAME                              STATUS   VOLUME                 CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+data-harbor-redis-0               Bound    harbor-trivy-pv        10Gi       RWO            nfs-storage    <unset>                 15m
+data-harbor-trivy-0               Bound    harbor-registry-pv     20Gi       RWO            nfs-storage    <unset>                 15m
+database-data-harbor-database-0   Bound    harbor-redis-pv        2Gi        RWO            nfs-storage    <unset>                 15m
+harbor-jobservice                 Bound    harbor-jobservice-pv   2Gi        RWO            nfs-storage    <unset>                 15m
+harbor-registry                   Bound    harbor-database-pv     10Gi       RWO            nfs-storage    <unset>                 15m
+
 ```
-
-
-
-
 
 
 
