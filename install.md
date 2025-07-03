@@ -372,7 +372,6 @@ data-harbor-trivy-0               Bound    harbor-registry-pv     20Gi       RWO
 database-data-harbor-database-0   Bound    harbor-redis-pv        2Gi        RWO            nfs-storage    <unset>                 15m
 harbor-jobservice                 Bound    harbor-jobservice-pv   2Gi        RWO            nfs-storage    <unset>                 15m
 harbor-registry                   Bound    harbor-database-pv     10Gi       RWO            nfs-storage    <unset>                 15m
-
 ```
 
 
