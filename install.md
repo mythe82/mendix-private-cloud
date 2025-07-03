@@ -200,180 +200,225 @@ mythe82@k8s-controller-1:~/mx/3_tekton$ sudo mv linux-amd64/helm /usr/local/bin/
 mythe82@k8s-controller-1:~/mx/3_tekton$ helm version
 ```
 
-## 5. Harbor 설치 (offline)
+## 5. Nexus 설치
 ```bash
-# online 환경에서 Harbor 릴리즈 패키지 다운로드
-mythe82@k8s-controller-1:~$ HARBOR_VERSION="2.13.1"
-mythe82@k8s-controller-1:~$ curl -L "https://github.com/goharbor/harbor/releases/download/v${HARBOR_VERSION}/harbor-offline-installer-v${HARBOR_VERSION}.tgz" -o "harbor-offline-installer-v${HARBOR_VERSION}.tgz"
-
-# online 환경에서 Helm 차트 다운로드
-mythe82@k8s-controller-1:~$ helm repo add harbor https://helm.goharbor.io
-mythe82@k8s-controller-1:~$ helm repo update
-mythe82@k8s-controller-1:~$ helm fetch harbor/harbor --version 1.17.1
-
-# Harbor 이미지 로드
-mythe82@k8s-controller-1:~$ tar xvfz harbor-offline-installer-v2.13.1.tgz
-mythe82@k8s-controller-1:~$ tar xzvf harbor-1.17.1.tgz
-mythe82@k8s-controller-1:~$ cd harbor/
-mythe82@k8s-controller-1:~/harbor$ scp harbor.v2.13.1.tar.gz wk01:~/
-
-# --- 각 노드에서 아래 명령어 실행 ---
-# harbor 이미지 아카이브가 있는 곳으로 이동
-# containerd의 k8s 네임스페이스로 이미지 로드 (필수)
-mythe82@k8s-controller-1:~/harbor$ sudo nerdctl --namespace k8s.io load -i harbor.v2.13.1.tar.gz
-mythe82@k8s-controller-1:~/harbor$ ssh wk01
-mythe82@k8s-worker-1:~$ sudo nerdctl --namespace k8s.io load -i harbor.v2.13.1.tar.gz
-
-# 로드 확인
-mythe82@k8s-controller-1:~/harbor$ sudo nerdctl --namespace k8s.io images | grep "goharbor"
-mythe82@k8s-worker-1:~$ sudo nerdctl --namespace k8s.io images | grep "goharbor"
-
-goharbor/harbor-log                                    v2.13.1          0ceff3e80b06    About a minute ago    linux/amd64    171.6MB    166.2MB
-goharbor/prepare                                       v2.13.1          4297b70787fd    About a minute ago    linux/amd64    226.7MB    213.7MB
-goharbor/harbor-jobservice                             v2.13.1          08af37e4194d    About a minute ago    linux/amd64    179.6MB    175.9MB
-goharbor/redis-photon                                  v2.13.1          7023398c8d85    About a minute ago    linux/amd64    173.4MB    168.4MB
-goharbor/harbor-exporter                               v2.13.1          a09bffc17c4f    About a minute ago    linux/amd64    133.4MB    129.7MB
-goharbor/harbor-registryctl                            v2.13.1          f606f750f05f    About a minute ago    linux/amd64    164.6MB    162.7MB
-goharbor/harbor-db                                     v2.13.1          5501021458c2    About a minute ago    linux/amd64    288.6MB    278.5MB
-goharbor/trivy-adapter-photon                          v2.13.1          d39f86d91af1    About a minute ago    linux/amd64    390.2MB    387.9MB
-goharbor/registry-photon                               v2.13.1          9e1894bee0ff    About a minute ago    linux/amd64    88.74MB    86.82MB
-goharbor/nginx-photon                                  v2.13.1          18413e62e4bb    About a minute ago    linux/amd64    158.1MB    153.4MB
-goharbor/harbor-portal                                 <none>           d83ecad7f48b    2 weeks ago           linux/amd64    166.9MB    53.6MB
-goharbor/harbor-portal                                 v2.13.1          9b31001ccde5    2 weeks ago           linux/amd64    166.9MB    162MB
-goharbor/harbor-core                                   <none>           bed040aef107    2 weeks ago           linux/amd64    203.6MB    63.86MB
-goharbor/harbor-core                                   v2.13.1          a22b58594cea    2 weeks ago           linux/amd64    203.6MB    199.6MB
-
-mythe82@k8s-controller-1:~/harbor$ cp values.yaml my-harbor-values.yaml
-mythe82@k8s-controller-1:~/harbor$ vi my-harbor-values.yaml
-# 1. 외부 접속 주소 설정 (필수)
-# DNS에 미리 등록하거나, NodePort 사용 시 노드 IP와 포트로 설정
-expose:
-  type: ingress # 또는 nodePort
-  # ingress 사용 시 hosts 설정
-  ingress:
-    hosts:
-      core: harbor.your-domain.com # 실제 사용할 도메인으로 변경
-    # className: "nginx" # 사용하는 Ingress Controller에 맞게 설정
-
-# 2. 이미지 Pull 정책 변경 (필수)
-# 노드에 미리 로드한 로컬 이미지를 사용하도록 설정
-imagePullPolicy: IfNotPresent
-
-# 3. 이미지 저장소 이름 (수정 금지)
-# 로드한 이미지 이름과 일치해야 하므로 기본값 'goharbor'를 유지
-image:
-  repository: goharbor
-
-# 4. Harbor 관리자(admin) 비밀번호 설정 (강력 권장)
-harborAdminPassword: "YourStrongPassword"
-
-# 5. 스토리지 설정
-# 사용하는 스토리지 클래스가 있다면 지정하는 것이 좋습니다.
-persistence:
-  enabled: true
-  # resourcePolicy: "keep"
-  # imageChartStorage:
-  #   storageClass: "your-storage-class"
-  # ...
-
-mythe82@k8s-controller-1:~/harbor$ kubectl create namespace harbor
-
-# 수정된 values.yaml로 Harbor의 모든 k8s 설정 파일을 다시 생성합니다.
-mythe82@k8s-controller-1:~/harbor$ helm template harbor . -f my-harbor-values.yaml --namespace harbor > harbor-manifests.yaml
-
-# 재생성된 설정 파일을 클러스터에 적용하여 기존 설정을 덮어씁니다.
-mythe82@k8s-controller-1:~/harbor$ kubectl apply -f harbor-manifests.yaml
-mythe82@k8s-controller-1:~/harbor$ kubectl get pvc -n harbor
-
-# NFS 서버에서 실행
-mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/database
-mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/redis
-mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/registry
-mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/trivy
-mythe82@k8s-controller-1:~/harbor$ mkdir -p /mnt/k8s-nfs/harbor/jobservice
-
-# Kubernetes 노드들이 접근할 수 있도록 권한 설정
-mythe82@k8s-controller-1:~/harbor$ sudo chmod -R 777 /mnt/k8s-nfs/harbor
-
-# harbor-nfs-pv.yaml
-mythe82@k8s-controller-1:~/harbor$ vi harbor-nfs-pv.yaml
-
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: harbor-database-pv
-spec:
-  capacity: { storage: 10Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-storage
-  nfs:
-    server: 10.178.0.11
-    path: "/mnt/k8s-nfs/harbor/database"
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: harbor-redis-pv
-spec:
-  capacity: { storage: 2Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-storage
-  nfs:
-    server: 10.178.0.11
-    path: "/mnt/k8s-nfs/harbor/redis"
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: harbor-registry-pv
-spec:
-  capacity: { storage: 20Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-storage
-  nfs:
-    server: 10.178.0.11
-    path: "/mnt/k8s-nfs/harbor/registry"
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: harbor-trivy-pv
-spec:
-  capacity: { storage: 10Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-storage
-  nfs:
-    server: 10.178.0.11
-    path: "/mnt/k8s-nfs/harbor/trivy"
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: harbor-jobservice-pv
-spec:
-  capacity: { storage: 2Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-storage
-  nfs:
-    server: 10.178.0.11
-    path: "/mnt/k8s-nfs/harbor/jobservice"
-
-mythe82@k8s-controller-1:~/harbor$ kubectl apply -f harbor-nfs-pv.yaml
-mythe82@k8s-controller-1:~/harbor$ kubectl get pvc -n harbor
-
-NAME                              STATUS   VOLUME                 CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
-data-harbor-redis-0               Bound    harbor-trivy-pv        10Gi       RWO            nfs-storage    <unset>                 15m
-data-harbor-trivy-0               Bound    harbor-registry-pv     20Gi       RWO            nfs-storage    <unset>                 15m
-database-data-harbor-database-0   Bound    harbor-redis-pv        2Gi        RWO            nfs-storage    <unset>                 15m
-harbor-jobservice                 Bound    harbor-jobservice-pv   2Gi        RWO            nfs-storage    <unset>                 15m
-harbor-registry                   Bound    harbor-database-pv     10Gi       RWO            nfs-storage    <unset>                 15m
+mythe82@k8s-controller-1:~$ mkdir nexus
+mythe82@k8s-controller-1:~$ cd nexus/
+mythe82@k8s-controller-1:~/nexus$ git clone https://github.com/stevehipwell/helm-charts.git
 ```
 
+```yaml
+mythe82@k8s-controller-1:~/nexus$ vi ./helm-charts/charts/nexus3/values.yaml
 
+# 아래 값을 찾아 변경
+image:
+  repository: docker.io/sonatype/nexus3
+  tag: latest
+  pullPolicy: IfNotPresent
+
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  storageClass: nfs-storage
+  size: 20Gi
+
+# ingress 섹션을 비활성화하거나 제거합니다.
+ingress:
+  enabled: false # 이 값을 false로 설정하거나, ingress 섹션 자체를 제거합니다.
+
+service:
+  # -- Service type.
+  type: NodePort # ClusterIP 대신 NodePort로 변경합니다.
+  # -- Service port.
+  port: 8081 # Nexus가 사용하는 기본 포트입니다.
+  # -- NodePort service port.
+  nodePort: 30081 # 외부에서 접근할 NodePort를 지정합니다. (30000-32767 범위 내에서 선택)
+  # -- Annotations for the `Service`.
+  annotations: {}
+  # -- Additional labels for the `Service`.
+  labels: {}
+```
+
+* PV 생성
+```yaml
+mythe82@k8s-controller-1:~/nexus$ sudo mkdir -p /mnt/k8s-nfs/nexus
+mythe82@k8s-controller-1:~/nexus$ vi nexus-data-pv.yaml
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nexus-data-pv
+spec:
+  capacity:
+    storage: 20Gi # PVC의 요구사항에 맞게 조정
+  accessModes:
+    - ReadWriteOnce # PVC의 AccessModes에 맞게 설정 (PVC의 AccessModes 확인 필요)
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage # PVC의 StorageClass와 동일하게 설정
+  nfs:
+    path: /mnt/k8s-nfs/nexus # NFS 서버에서 공유하는 디렉터리
+    server: 10.178.0.11 # NFS 서버의 IP 주소로 변경
+```
+
+* nexus 설치
+```bash
+mythe82@k8s-controller-1:~/nexus$ kubectl apply -f nexus-data-pv.yaml
+mythe82@k8s-controller-1:~/nexus$ k get pv
+mythe82@k8s-controller-1:~/nexus$ cd ./helm-charts/charts/nexus3
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ helm install nexus . --namespace nexus --create-namespace
+```
+
+* Nexsus 대시보드 설정
+
+```bash
+# web-ui password 확인
+mythe82@k8s-controller-1:~/nexus$ kubectl exec -it -n nexus nexus-nexus3-0 -- cat /nexus-data/admin.password
+24bfcb3f-47c5-4350-af04-fe86ba9c8bdc
+```
+  - ID: admin
+  - password: qwe1212!Q
+
+* docker image를 위한 repository 구성
+
+Repository를 생성하기 위해서는 Blob Store를 생성 후 Repository에 연결해야 한다.
+
+***상단의 톱니바퀴 모양을 눌러 Administration 메뉴로 진입 → Blob Store 탭 → 상단의 파란색 Create Blob Store 버튼 클릭***
+
+외부 Object Storage에 연결하지 않고 로컬 서버의 저장소를 이용할 것이므로 ***Type을 File로 지정한 뒤 해당 Blob Store 이름을 지정 → save 클릭***
+
+Blob Store 설정 완료 후 Repository 생성
+
+Local 환경의 Repository와 Docker Hub와 연결되는 Repository를 생성한다.
+
+***Administration → Repository → Repositories** 항목 클릭 **→ 좌측 상단의 Create Repository 버튼을 클릭***
+
+해당 버튼을 클릭하면 Nexus에서 제공하는 Repository Recipe 리스트가 나온다.
+
+Recipe는 해당 저장소에 대한 Tempelate라고 생각하면 된다. Nexus는 apt 저장소부터 Maven, yum, docker 등 다양한 저장소에 대한 Recipe를 제공한다.
+
+***Local Repository를 만들기 위해 docker (hosted) Recipe를 선택***
+
+***Local Repository의 이름을 private-reg-local로 설정***
+
+***HTTP 설정을 체크한 뒤 Port 5080 설정***
+
+***Docker API v1을 지원하기 위해 Enable Docker V1 API 옵션을 활성화***
+
+***생성할 Repository가 어떤 Blob Store를 사용할지 설정 앞 단계에서 생성했던 private-reg-local Blob Store를 사용***
+
+***하단의 Create Repository 버튼을 클릭하여 Repository 생성***
+
+***Repository가 생성되었다면 Docker Login 설정을 위해 Administration → Security  Realms 설정 → Docker Bearer Token Realm 활성화***
+
+***해당 설정 후 우측 하단의 파란색 Save 버튼을 클릭하여 Docker Login 설정을 적용***
+
+- Docker 로그인 및 이미지 테스트
+
+private registry nexus는 기본적으로 인증되지 않은 저장소이며 TLS 통신을 하지 않아 docker daemon에서 해당 서버로의 접근을 차단하므로 미리 아래 옵션 설정 필요
+
+```yaml
+# containers 섹션에 5080 포트 추가
+root@cp-k8s:~/mx# kubectl edit statefulset nexus-nexus3 -n nexus
+
+        name: nexus3
+        ports:
+        - containerPort: 8081
+          name: http
+          protocol: TCP
+        - containerPort: 5080
+          name: nexus
+          protocol: TCP
+
+# 수정 후 StatefulSet 재시작
+root@cp-k8s:~/mx# kubectl rollout restart statefulset nexus-nexus3 -n nexus
+```
+
+```yaml
+# Service에 port: 5080 및 targetPort: 5080 추가
+root@cp-k8s:~/mx# kubectl edit svc nexus-nexus3 -n nexus
+
+  ports:
+  - name: http
+    port: 8081
+    protocol: TCP
+    targetPort: http
+  - name: nexus
+    port: 5080
+    protocol: TCP
+    targetPort: nexus
+```
+
+```yaml
+# Ingress path /v2/ 5080 포트 라우팅 추가
+root@cp-k8s:~/mx# kubectl edit ingress nexus-ingress -n nexus
+
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: nexus.mxtest.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: nexus-nexus3
+            port:
+              number: 8081
+        path: /
+        pathType: Prefix
+      - backend:
+          service:
+            name: nexus-nexus3
+            port:
+              number: 5080
+        path: /v2/
+        pathType: Prefix
+status:
+  loadBalancer:
+    ingress:
+    - ip: 192.168.56.20
+```
+
+```bash
+# nexus cluster IP 확인
+root@cp-k8s:~/mx# kubectl get svc -n nexus
+```
+
+```json
+root@cp-k8s:~/mx# vi /etc/docker/daemon.json
+
+{
+        "insecure-registries": ["10.96.248.71:5080", "nexus.mxtest.com:5080"]
+}
+```
+
+```bash
+root@cp-k8s:~/mx# systemctl restart docker.service
+
+# master/worker node 모두 적용
+root@cp-k8s:~/mx# vi /etc/hosts
+127.0.0.1 localhost
+192.168.56.10 cp-k8s
+192.168.56.11 w1-k8s
+10.96.248.71 nexus.mxtest.com
+```
+
+nexus 대시보드 계정인 admin 이용
+
+```bash
+root@cp-k8s:~/mx# docker login http://nexus.mxtest.com:5080
+
+Username: admin
+Password:
+WARNING! Your password will be stored unencrypted in /root/.docker/config.json.
+Configure a credential helper to remove this warning. See
+https://docs.docker.com/engine/reference/commandline/login/#credential-stores
+
+Login Succeeded
+```
+
+```bash
+root@cp-k8s:~/mx# docker pull redis:latest
+root@cp-k8s:~/mx# docker image tag redis:latest nexus.mxtest.com:5080/redis-test:1.0
+root@cp-k8s:~/mx# docker push nexus.mxtest.com:5080/redis-test:1.0
 
 
