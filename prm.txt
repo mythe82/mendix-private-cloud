@@ -1,72 +1,24 @@
-## 5. Nexus 설치
-```bash
-mythe82@k8s-controller-1:~$ mkdir nexus
-mythe82@k8s-controller-1:~$ cd nexus/
-mythe82@k8s-controller-1:~/nexus$ git clone https://github.com/stevehipwell/helm-charts.git
-```
-
-```yaml
-mythe82@k8s-controller-1:~/nexus$ vi ./helm-charts/charts/nexus3/values.yaml
-
-# 아래 값을 찾아 변경
-image:
-  repository: docker.io/sonatype/nexus3
-  tag: latest
-  pullPolicy: IfNotPresent
-
-persistence:
-  enabled: true
-  accessMode: ReadWriteOnce
-  storageClass: nfs-storage
-  size: 20Gi
-
-# ingress 섹션을 비활성화하거나 제거합니다.
-ingress:
-  enabled: false # 이 값을 false로 설정하거나, ingress 섹션 자체를 제거합니다.
-
 service:
   # -- Service type.
-  type: NodePort # ClusterIP 대신 NodePort로 변경합니다.
-  # -- Service port.
-  port: 8081 # Nexus가 사용하는 기본 포트입니다.
-  # -- NodePort service port.
-  nodePort: 30081 # 외부에서 접근할 NodePort를 지정합니다. (30000-32767 범위 내에서 선택)
-  # -- Annotations for the `Service`.
+  type: NodePort
+  # -- Service annotations.
   annotations: {}
-  # -- Additional labels for the `Service`.
+  ports:
+    http:
+      enable: true
+      port: 8081
+      nodeport: 30081
+      protocol: TCP
+      targetPort: 8081
   labels: {}
-```
-
-* PV 생성
-```yaml
-mythe82@k8s-controller-1:~/nexus$ sudo mkdir -p /mnt/k8s-nfs/nexus
-mythe82@k8s-controller-1:~/nexus$ vi nexus-data-pv.yaml
-
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: nexus-data-pv
-spec:
-  capacity:
-    storage: 20Gi # PVC의 요구사항에 맞게 조정
-  accessModes:
-    - ReadWriteOnce # PVC의 AccessModes에 맞게 설정 (PVC의 AccessModes 확인 필요)
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-storage # PVC의 StorageClass와 동일하게 설정
-  nfs:
-    path: /mnt/k8s-nfs/nexus # NFS 서버에서 공유하는 디렉터리
-    server: 10.178.0.11 # NFS 서버의 IP 주소로 변경
-```
-
-* nexus 설치
-```bash
-mythe82@k8s-controller-1:~/nexus$ kubectl apply -f nexus-data-pv.yaml
-mythe82@k8s-controller-1:~/nexus$ k get pv
-mythe82@k8s-controller-1:~/nexus$ cd ./helm-charts/charts/nexus3
+  # -- Additional ports to expose.
+  # @default -- See _values.yaml_
+  additionalPorts: []
+=======
 mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ helm install nexus . --namespace nexus --create-namespace
-```
-======
-위처럼 넥서스를 설치했는데 노드포트가 아래처럼 다른 포트가 설정되었습니다.
-===
-mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ kubectl get svc -A -o wide | grep NodePort
-nexus         nexus-nexus3      NodePort    10.233.59.53   <none>        8081:32329/TCP           29m   app.kubernetes.io/component=repository,app.kubernetes.io/instance=nexus,app.kubernetes.io/name=nexus3
+Error: INSTALLATION FAILED: 2 errors occurred:
+        * Service "nexus-nexus3-hl" is invalid: spec.ports[0].port: Invalid value: 0: must be between 1 and 65535, inclusive
+        * Service "nexus-nexus3" is invalid: spec.ports[0].port: Invalid value: 0: must be between 1 and 65535, inclusive
+
+=======================
+문제가 발생하네요.
