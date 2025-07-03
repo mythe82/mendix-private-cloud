@@ -5,20 +5,16 @@ service:
   annotations: {}
   ports:
     http:
-      enable: true
+      enabled: true
       port: 8081
-      nodeport: 30081
+      nodePort: 30081
       protocol: TCP
       targetPort: 8081
   labels: {}
-  # -- Additional ports to expose.
-  # @default -- See _values.yaml_
-  additionalPorts: []
-=======
+================
 mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ helm install nexus . --namespace nexus --create-namespace
 Error: INSTALLATION FAILED: 2 errors occurred:
         * Service "nexus-nexus3-hl" is invalid: spec.ports[0].port: Invalid value: 0: must be between 1 and 65535, inclusive
         * Service "nexus-nexus3" is invalid: spec.ports[0].port: Invalid value: 0: must be between 1 and 65535, inclusive
-
-=======================
-문제가 발생하네요.
+===
+동일한데요.
