@@ -207,7 +207,7 @@ mythe82@k8s-controller-1:~$ cd nexus/
 mythe82@k8s-controller-1:~/nexus$ git clone https://github.com/stevehipwell/helm-charts.git
 ```
 
-```yaml
+```bash
 mythe82@k8s-controller-1:~/nexus$ vi ./helm-charts/charts/nexus3/values.yaml
 
 # 아래 값을 찾아 변경
@@ -240,7 +240,7 @@ service:
 ```
 
 * PV 생성
-```yaml
+```bash
 mythe82@k8s-controller-1:~/nexus$ sudo mkdir -p /mnt/k8s-nfs/nexus
 mythe82@k8s-controller-1:~/nexus$ vi nexus-data-pv.yaml
 
@@ -269,16 +269,14 @@ mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ helm install nexus .
 ```
 
 * Nexsus 대시보드 설정
-
 ```bash
 # web-ui password 확인
 mythe82@k8s-controller-1:~/nexus$ kubectl exec -it -n nexus nexus-nexus3-0 -- cat /nexus-data/admin.password
-24bfcb3f-47c5-4350-af04-fe86ba9c8bdc
 ```
   - ID: admin
   - password: qwe1212!Q
 
-* docker image를 위한 repository 구성
+* image를 위한 repository 구성
 
 Repository를 생성하기 위해서는 Blob Store를 생성 후 Repository에 연결해야 한다.
 
@@ -312,13 +310,13 @@ Recipe는 해당 저장소에 대한 Tempelate라고 생각하면 된다. Nexus�
 
 ***해당 설정 후 우측 하단의 파란색 Save 버튼을 클릭하여 Docker Login 설정을 적용***
 
-- Docker 로그인 및 이미지 테스트
+* Nexus repository 로그인 및 이미지 테스트
 
 private registry nexus는 기본적으로 인증되지 않은 저장소이며 TLS 통신을 하지 않아 docker daemon에서 해당 서버로의 접근을 차단하므로 미리 아래 옵션 설정 필요
 
-```yaml
+```bash
 # containers 섹션에 5080 포트 추가
-root@cp-k8s:~/mx# kubectl edit statefulset nexus-nexus3 -n nexus
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ kubectl edit statefulset nexus-nexus3 -n nexus
 
         name: nexus3
         ports:
@@ -330,95 +328,57 @@ root@cp-k8s:~/mx# kubectl edit statefulset nexus-nexus3 -n nexus
           protocol: TCP
 
 # 수정 후 StatefulSet 재시작
-root@cp-k8s:~/mx# kubectl rollout restart statefulset nexus-nexus3 -n nexus
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ kubectl rollout restart statefulset nexus-nexus3 -n nexus
 ```
 
-```yaml
+```bash
 # Service에 port: 5080 및 targetPort: 5080 추가
-root@cp-k8s:~/mx# kubectl edit svc nexus-nexus3 -n nexus
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ kubectl edit svc nexus-nexus3 -n nexus
 
   ports:
   - name: http
+    nodePort: 30137
     port: 8081
     protocol: TCP
     targetPort: http
   - name: nexus
+    nodePort: 31865
     port: 5080
     protocol: TCP
-    targetPort: nexus
-```
-
-```yaml
-# Ingress path /v2/ 5080 포트 라우팅 추가
-root@cp-k8s:~/mx# kubectl edit ingress nexus-ingress -n nexus
-
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: nexus.mxtest.com
-    http:
-      paths:
-      - backend:
-          service:
-            name: nexus-nexus3
-            port:
-              number: 8081
-        path: /
-        pathType: Prefix
-      - backend:
-          service:
-            name: nexus-nexus3
-            port:
-              number: 5080
-        path: /v2/
-        pathType: Prefix
-status:
-  loadBalancer:
-    ingress:
-    - ip: 192.168.56.20
+    targetPort: 5080
 ```
 
 ```bash
 # nexus cluster IP 확인
-root@cp-k8s:~/mx# kubectl get svc -n nexus
-```
-
-```json
-root@cp-k8s:~/mx# vi /etc/docker/daemon.json
-
-{
-        "insecure-registries": ["10.96.248.71:5080", "nexus.mxtest.com:5080"]
-}
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ kubectl get svc -n nexus
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ kubectl get nodes -o wide
 ```
 
 ```bash
-root@cp-k8s:~/mx# systemctl restart docker.service
+# containerd에 Insecure Registry 설정 추가 - 모든 마스터/워커 노드에서 파일을 수정
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ sudo mkdir -p /etc/containerd/certs.d/10.178.0.21:31865
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ sudo vi /etc/containerd/certs.d/10.178.0.21:31865/hosts.toml
 
-# master/worker node 모두 적용
-root@cp-k8s:~/mx# vi /etc/hosts
-127.0.0.1 localhost
-192.168.56.10 cp-k8s
-192.168.56.11 w1-k8s
-10.96.248.71 nexus.mxtest.com
-```
+server = "http://10.178.0.21:31865"
 
-nexus 대시보드 계정인 admin 이용
+[host."http://10.178.0.21:31865"]
+  capabilities = ["pull", "resolve", "push"]
+  skip_verify = true
 
-```bash
-root@cp-k8s:~/mx# docker login http://nexus.mxtest.com:5080
-
-Username: admin
-Password:
-WARNING! Your password will be stored unencrypted in /root/.docker/config.json.
-Configure a credential helper to remove this warning. See
-https://docs.docker.com/engine/reference/commandline/login/#credential-stores
-
-Login Succeeded
+mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ sudo systemctl restart containerd
 ```
 
 ```bash
-root@cp-k8s:~/mx# docker pull redis:latest
-root@cp-k8s:~/mx# docker image tag redis:latest nexus.mxtest.com:5080/redis-test:1.0
-root@cp-k8s:~/mx# docker push nexus.mxtest.com:5080/redis-test:1.0
+# nerdctl로 Nexus에 로그인
+sudo nerdctl login 10.178.0.21:31865
 
+# 이미지 다운로드
+sudo nerdctl pull redis:latest
+
+# 이미지 태그 지정
+sudo nerdctl image tag redis:latest 10.178.0.21:31865/redis-test:1.0
+
+# 이미지 푸시
+sudo nerdctl push 10.178.0.21:31865/redis-test:1.0
+```
 
