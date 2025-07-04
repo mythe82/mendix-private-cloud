@@ -1,20 +1,359 @@
-service:
-  # -- Service type.
-  type: NodePort
-  # -- Service annotations.
-  annotations: {}
-  ports:
-    http:
-      enabled: true
-      port: 8081
-      nodePort: 30081
-      protocol: TCP
-      targetPort: 8081
-  labels: {}
-================
-mythe82@k8s-controller-1:~/nexus/helm-charts/charts/nexus3$ helm install nexus . --namespace nexus --create-namespace
-Error: INSTALLATION FAILED: 2 errors occurred:
-        * Service "nexus-nexus3-hl" is invalid: spec.ports[0].port: Invalid value: 0: must be between 1 and 65535, inclusive
-        * Service "nexus-nexus3" is invalid: spec.ports[0].port: Invalid value: 0: must be between 1 and 65535, inclusive
-===
-동일한데요.
+# -*- coding: utf-8 -*-
+
+# 필요한 라이브러리들을 임포트
+import win32com.client                                              # 엑셀(COM 객체)을 제어하기 위한 라이브러리
+from datetime import datetime, timedelta                            # 날짜와 시간 관련 처리를 위한 라이브러리
+import sys                                                          # 시스템 관련 기능(예: 커맨드 라인 인자)을 사용하기 위한 라이브러리
+from selenium import webdriver                                      # 웹 브라우저를 자동화하기 위한 라이브러리
+from selenium.webdriver.chrome.options import Options               # 크롬 브라우저의 옵션을 설정하기 위한 클래스
+from selenium.webdriver.chrome.service import Service               # 크롬 드라이버 서비스를 관리하기 위한 클래스
+from selenium.webdriver.common.by import By                         # 웹 요소를 찾기 위한 방법을 정의하는 클래스
+from selenium.webdriver.common.keys import Keys                     # 키보드 입력을 시뮬레이션하기 위한 클래스
+from selenium.webdriver.support.ui import WebDriverWait             # 특정 조건이 충족될 때까지 대기하기 위한 클래스
+from selenium.webdriver.support import expected_conditions as EC    # WebDriverWait에 사용될 조건들을 정의
+import time                                                         # 시간 관련 함수(예: 일정 시간 대기)를 사용하기 위한 라이브러리
+import os                                                           # 운영체제와 상호작용(파일/폴더 경로, 파일 삭제 등)하기 위한 라이브러리
+import configparser                                                 # 설정 파일(.ini)을 읽고 파싱하기 위한 라이브러리
+
+def download_login_history_report(download_dir, chrome_driver_path, target_date, username, password):
+    """
+    웹사이트에 로그인하여 특정 날짜의 '로그인 이력' 엑셀 파일을 다운로드하는 함수
+    성공 시 다운로드된 파일 경로를 반환하고, 실패 시 None을 반환합니다.
+    """
+    print("--- 웹 자동화 및 파일 다운로드를 시작합니다. ---")
+    
+    chrome_options = Options()
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "directory_upgrade": True,
+        "safeBrowse.enabled": False,
+        "safeBrowse.insecure_content_allowed_for_urls": ["https://home-plm.samsungds.net:18080"]
+    })
+
+    service = Service(chrome_driver_path)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    
+    try:
+        driver.get("https://home-plm.samsungds.net:18080/index.html")
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "userNameInput")))
+        driver.find_element(By.ID, "userNameInput").send_keys(username)
+        driver.find_element(By.ID, "passwordInput").send_keys(password)
+        driver.find_element(By.ID, "submitButton").click()
+
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//a[contains(@class, "mx-name-navigationTree1-2") and @title="시스템관리"]'))).click()
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//a[contains(@class, "mx-name-navigationTree1-2-0") and @title="Maintenance"]'))).click()
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//a[contains(@class, "mx-name-tabPage2") and contains(text(),"이전 기능")]'))).click()
+        
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//button[contains(normalize-space(), "로그인 이력")]'))).click()
+
+        date_input = WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//input[@placeholder="yyyy-mm-dd"]')))
+        
+        date_str_for_input = target_date.strftime("%Y-%m-%d") 
+        print(f"조회할 날짜를 설정합니다: {date_str_for_input}")
+
+        date_input.clear()
+        date_input.send_keys(date_str_for_input)
+        date_input.send_keys(Keys.ENTER)
+        time.sleep(1)
+
+        WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.XPATH, '//button[normalize-space()="Excel Download"]'))).click()
+
+        download_wait_time = 30
+        start_time = time.time()
+        
+        print("다운로드 시작... 완료될 때까지 대기합니다.")
+        while time.time() - start_time < download_wait_time:
+            is_downloading = any('.crdownload' in f for f in os.listdir(download_dir))
+            
+            if not is_downloading:
+                candidate_files = [f for f in os.listdir(download_dir) if f.startswith('접속사용자리스트') and f.endswith('.xlsx')]
+                if candidate_files:
+                    latest_file = max(candidate_files, key=lambda f: os.path.getmtime(os.path.join(download_dir, f)))
+                    file_path = os.path.join(download_dir, latest_file)
+                    print("파일 다운로드 완료 감지")
+                    return file_path
+            time.sleep(1)
+
+        print("오류: 다운로드 시간 초과 또는 '접속사용자리스트' 파일을 찾을 수 없습니다.")
+        return None
+
+    except Exception as e:
+        print(f"웹 자동화 중 오류가 발생했습니다: {e}")
+        return None
+    finally:
+        if 'driver' in locals() and driver:
+            driver.quit()
+        print("--- 웹 자동화 및 파일 다운로드를 종료합니다. ---")
+
+# 이 스크립트 파일이 직접 실행될 때만 아래 코드를 실행합니다.
+if __name__ == "__main__":
+    config = configparser.ConfigParser()
+    config.read('config.ini', encoding='utf-8')
+
+    try:
+        USERNAME = config['credentials']['username']
+        PASSWORD = config['credentials']['password']
+    except KeyError as e:
+        print(f"오류: config.ini 파일에서 설정 값을 찾을 수 없습니다: {e}")
+        sys.exit(1)
+
+    if len(sys.argv) < 2:
+        print("사용법: python <script_name>.py [am|pm|YYMMDD]")
+        sys.exit(1)
+    
+    arg = sys.argv[1]
+    target_date = None
+    run_mode = None
+
+    if arg in ['am', 'pm']:
+        run_mode = arg
+        target_date = datetime.now()
+        ampm_str = "오전" if arg == "am" else "오후"
+        print(f"동작 모드: 오늘 날짜 데이터 처리 ({ampm_str})")
+    else:
+        try:
+            target_date = datetime.strptime(arg, "%y%m%d")
+            run_mode = 'date' 
+            print(f"동작 모드: 지정 날짜 데이터 다운로드 ({target_date.strftime('%Y-%m-%d')})")
+        except ValueError:
+            print(f"오류: 잘못된 인자 '{arg}' 입니다. 날짜는 YYMMDD 형식(예: 250704)이어야 합니다.")
+            print("사용법: python <script_name>.py [am|pm|YYMMDD]")
+            sys.exit(1)
+    
+    USER_HOME = os.path.expanduser('~')
+    DOWNLOAD_DIR = os.path.join(USER_HOME, 'Downloads')
+    
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    CHROME_DRIVER_PATH = os.path.join(BASE_DIR, 'drivers', 'chromedriver.exe')
+    SAVE_DIR = BASE_DIR
+    
+    downloaded_filepath = download_login_history_report(DOWNLOAD_DIR, CHROME_DRIVER_PATH, target_date, USERNAME, PASSWORD)
+    
+    excel = None
+    
+    try:
+        if downloaded_filepath and run_mode in ['am', 'pm']:
+            print("\n--- 엑셀 데이터 처리를 시작합니다. ---")
+            
+            excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = False
+
+            # 1. 일일 접속 현황 파일 생성
+            now = datetime.now()
+            date_str = now.strftime("%Y%m%d")
+            ampm_kr = "오전" if run_mode == "am" else "오후"
+            
+            new_filename = f"일일접속현황(MX)_{date_str}_{ampm_kr}.xlsx"
+            primary_save_path = os.path.join(SAVE_DIR, new_filename)
+
+            wb = excel.Workbooks.Open(downloaded_filepath)
+            ws_count = wb.Worksheets('COUNT')
+            
+            last_row_index = ws_count.Cells(ws_count.Rows.Count, 2).End(-4162).Row
+            
+            for row in range(last_row_index, 3, -1):
+                cell_value = ws_count.Cells(row, 2).Value
+                if cell_value:
+                    cell_str = str(cell_value).strip()
+                    if cell_str.endswith(('.id', '.pub', '.sec', '.admin')):
+                        ws_count.Rows(row).Delete()
+
+            last_data_row = ws_count.Cells(ws_count.Rows.Count, "B").End(-4162).Row
+            
+            if last_data_row >= 4:
+                sort_range = ws_count.Range(f"B4:C{last_data_row}")
+                sort_range.Sort(Key1=ws_count.Range("C4"), Order1=1, Header=2)
+                print("COUNT 시트 데이터 정렬 완료 (Name 열 기준 오름차순).")
+
+            final_data_count = last_data_row - 3 if last_data_row >= 4 else 0 
+            ws_count.Cells(2, 3).Value = final_data_count
+            print(f"COUNT 시트 필터링 및 행 수 계산 완료. 최종 접속자 수: {final_data_count}")
+
+            excel.DisplayAlerts = False
+            try:
+                wb.Worksheets('MX').Delete()
+            except Exception:
+                pass
+            
+            wb.SaveAs(primary_save_path)
+            wb.Close(False)
+            print(f"파일이 성공적으로 저장되었습니다: {primary_save_path}")
+
+            # 템플릿 파일에 데이터 추가
+            print("\n--- 템플릿 파일에 데이터 추가 작업을 시작합니다. ---")
+            template_dir = os.path.join(BASE_DIR, 'template')
+
+            # am/pm 모드에 따라 다른 템플릿 파일 사용
+            template_prefix = "AM_MX_일일접속현황_" if run_mode == "am" else "PM_MX_일일접속현황_"
+            template_filename = next((f for f in os.listdir(template_dir) if f.startswith(template_prefix) and f.endswith('.xlsx')), None)
+
+            if not template_filename:
+                print(f"오류: '{template_dir}' 폴더에서 '{template_prefix}*.xlsx' 템플릿 파일을 찾을 수 없습니다.")
+            else:
+                template_filepath = os.path.join(template_dir, template_filename)
+                print(f"템플릿 파일을 찾았습니다: {template_filepath}")
+
+                wb_source = excel.Workbooks.Open(primary_save_path)
+                ws_source = wb_source.Worksheets('COUNT')
+                wb_dest = excel.Workbooks.Open(template_filepath)
+                ws_dest = wb_dest.Worksheets(1)
+                
+                print(f"D3 셀에 최종 접속자 수({final_data_count})를 입력합니다.")
+                ws_dest.Range("D3").Value = final_data_count
+
+                # am/pm 모드에 따라 다른 정보와 시트 이름을 적용
+                date_for_cell = now.strftime("%Y.%m.%d")
+                if run_mode == 'am':
+                    cell_d2_value = f"{date_for_cell} 06:00~12:00"
+                    new_sheet_name = f"MX_로그인 현황_{date_str}_0600_1200"
+                else: # pm 모드
+                    cell_d2_value = f"{date_for_cell} 12:00~17:00"
+                    new_sheet_name = f"MX_로그인 현황_{date_str}_1200_1700"
+                
+                print(f"D2 셀에 '{cell_d2_value}'를 입력합니다.")
+                ws_dest.Range("D2").Value = cell_d2_value
+
+                print(f"첫 번째 시트 이름을 '{new_sheet_name}'으로 변경합니다.")
+                ws_dest.Name = new_sheet_name
+                
+                # ==========================================================
+                # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 수정된 부분 시작 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+                # 두 번째 시트 이름 변경 로직 추가
+                try:
+                    ws_dest_2 = wb_dest.Worksheets(2)
+                    new_sheet_2_name = f"MX_접속사용자리스트_{date_str}"
+                    print(f"두 번째 시트 이름을 '{new_sheet_2_name}'으로 변경합니다.")
+                    ws_dest_2.Name = new_sheet_2_name
+                except Exception as e:
+                    # 두 번째 시트가 없는 경우 등 예외 발생 시 오류 메시지를 출력하고 계속 진행
+                    print(f"두 번째 시트 처리 중 오류 발생 (무시하고 계속 진행): {e}")
+                # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 수정된 부분 종료 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+                # ==========================================================
+
+                last_row_source = ws_source.Cells(ws_source.Rows.Count, "B").End(-4162).Row
+                if last_row_source < 4:
+                    print("소스 파일에 복사할 데이터가 없습니다.")
+                else:
+                    header_row = 4
+                    user_id_col = None
+                    name_col = None
+                    
+                    for col in range(1, ws_dest.UsedRange.Columns.Count + 2):
+                        header_value = str(ws_dest.Cells(header_row, col).Value or '').strip()
+                        if header_value == "User ID": user_id_col = col
+                        elif header_value == "Name": name_col = col
+
+                    if not user_id_col or not name_col:
+                        print("오류: 템플릿 파일에서 'User ID' 또는 'Name' 열을 찾을 수 없습니다.")
+                    else:
+                        print(f"성공: 'User ID' 열({user_id_col}), 'Name' 열({name_col})을 찾았습니다.")
+                        
+                        first_data_row = header_row + 1
+                        last_used_row = ws_dest.UsedRange.Row + ws_dest.UsedRange.Rows.Count - 1
+                        no_col_letter = 'B'
+                        
+                        if last_used_row >= first_data_row:
+                            print(f"{first_data_row}행부터 기존 데이터를 삭제합니다.")
+                            ws_dest.Range(f"{no_col_letter}{first_data_row}:D{last_used_row}").ClearContents()
+                        
+                        paste_start_row = 5
+                        
+                        data_to_copy = ws_source.Range(f"B4:C{last_row_source}").Value
+                        num_rows = len(data_to_copy)
+                        
+                        user_id_data = [[row[0]] for row in data_to_copy]
+                        ws_dest.Range(ws_dest.Cells(paste_start_row, user_id_col), ws_dest.Cells(paste_start_row + num_rows - 1, user_id_col)).Value = user_id_data
+                        
+                        name_data = [[row[1]] for row in data_to_copy]
+                        ws_dest.Range(ws_dest.Cells(paste_start_row, name_col), ws_dest.Cells(paste_start_row + num_rows - 1, name_col)).Value = name_data
+                        
+                        no_col = user_id_col - 1
+                        for i in range(num_rows):
+                            ws_dest.Cells(paste_start_row + i, no_col).Value = i + 1
+
+                        print("새 데이터 영역에 서식을 적용합니다.")
+                        
+                        last_data_row_dest = paste_start_row + num_rows - 1
+                        format_range = ws_dest.Range(
+                            ws_dest.Cells(paste_start_row, no_col),
+                            ws_dest.Cells(last_data_row_dest, name_col)
+                        )
+
+                        borders = format_range.Borders
+                        borders.LineStyle = 1 # xlContinuous
+                        borders.Weight = 2    # xlThin
+
+                        align_range = ws_dest.Range(
+                            ws_dest.Cells(paste_start_row, user_id_col),
+                            ws_dest.Cells(last_data_row_dest, name_col)
+                        )
+                        align_range.HorizontalAlignment = -4131 # xlLeft
+
+                        print(f"{num_rows}개의 행이 템플릿 파일에 추가되었고 서식이 적용되었습니다.")
+
+                        # am/pm 모드에 따라 다른 파일 이름으로 저장
+                        if run_mode == 'am':
+                            new_template_filename = f"MX_일일접속현황_{date_str}_1200_v1.0.xlsx"
+                        else: # pm 모드
+                            new_template_filename = f"MX_일일접속현황_{date_str}_1700_v1.0.xlsx"
+
+                        new_save_path = os.path.join(SAVE_DIR, new_template_filename)
+                        
+                        excel.DisplayAlerts = False
+                        wb_dest.SaveAs(new_save_path)
+                        print(f"업데이트된 파일이 성공적으로 저장되었습니다: {new_save_path}")
+
+                wb_source.Close(False)
+                wb_dest.Close(False)
+
+        elif downloaded_filepath and run_mode == 'date':
+            print(f"\n지정 날짜 파일 다운로드에 성공했습니다: {downloaded_filepath}")
+            print("--- 엑셀 데이터 처리를 시작합니다. (D열 및 COUNT 시트 삭제) ---")
+            
+            excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = False
+
+            wb = excel.Workbooks.Open(downloaded_filepath)
+            ws = wb.Worksheets(1)
+            
+            print("D열 (사용자명)을 삭제합니다.")
+            ws.Columns("D").Delete()
+
+            date_str = target_date.strftime("%Y%m%d")
+            new_filename = f"MX_접속사용자리스트_{date_str}.xlsx"
+            save_path = os.path.join(SAVE_DIR, new_filename)
+            excel.DisplayAlerts = False
+            
+            try:
+                print("'COUNT' 시트를 삭제합니다.")
+                wb.Worksheets('COUNT').Delete()
+            except Exception as sheet_e:
+                print("'COUNT' 시트를 찾을 수 없거나 삭제 중 오류가 발생했습니다:", sheet_e)
+
+            wb.SaveAs(save_path)
+            wb.Close(False)
+            print(f"처리 후 파일이 성공적으로 저장되었습니다: {save_path}")
+        
+        else:
+            print("\n파일 다운로드에 실패했으므로 처리를 진행하지 않습니다.")
+
+    except Exception as e:
+        print(f"엑셀 처리 중 오류가 발생했습니다: {e}")
+
+    finally:
+        if excel:
+            excel.DisplayAlerts = True
+            excel.Quit()
+            print("\n--- 엑셀 애플리케이션을 종료합니다. ---")
+
+    if downloaded_filepath and os.path.exists(downloaded_filepath):
+        try:
+            print(f"\n--- 원본 다운로드 파일 삭제를 시작합니다. ---")
+            os.remove(downloaded_filepath)
+            print(f"파일 삭제 완료: {downloaded_filepath}")
+        except PermissionError:
+            print(f"오류: 파일을 삭제할 권한이 없습니다. 파일이 다른 프로그램에서 열려 있는지 확인하세요.: {downloaded_filepath}")
+        except Exception as e:
+            print(f"오류: 원본 파일을 삭제하는 중 문제가 발생했습니다: {e}")
+
